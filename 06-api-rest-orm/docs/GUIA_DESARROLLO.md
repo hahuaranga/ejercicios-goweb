@@ -105,7 +105,7 @@ sequenceDiagram
     G-->>Aux: *gorm.DB con .Error
     alt .Error != nil (no encontrado)
         Aux-->>H: (user vacío, err)
-        H->>Cli: 404 "Resouece Not Found"
+        H->>Cli: 404 "Resource Not Found"
     else encontrado
         Aux-->>H: (user, nil)
         H->>Cli: 200 + JSON del user
@@ -153,7 +153,7 @@ Lo primero es siempre el módulo. Lo nombramos `gorm` — el mismo nombre que la
 
 Declaramos las dependencias que ya sabíamos que íbamos a necesitar: el router (`gorilla/mux`), el ORM (`gorm.io/gorm`) y su driver de MySQL (`gorm.io/driver/mysql`), más las dependencias transitivas que GORM arrastra (`jinzhu/inflection`, `jinzhu/now`, `go-sql-driver/mysql`).
 
-⚠️ **Nota de la bitácora:** en la versión original todas las dependencias, incluidas las que usamos directamente (`gorilla/mux`, `gorm.io/gorm`, `gorm.io/driver/mysql`), estaban marcadas como `// indirect`. Eso normalmente pasa cuando se edita `go.mod` a mano en vez de dejar que `go mod tidy`/`go get` lo mantengan. Lo corregimos en el paso [5.7](#57-migración-a-go-1265) al migrar la versión de Go.
+📘 **Concepto de Go:** `go mod tidy` separa el bloque `require` en dos: uno para las dependencias que el propio código importa directamente (`gorilla/mux`, `gorm.io/gorm`, `gorm.io/driver/mysql`) y otro para las transitivas que esas dependencias arrastran (`// indirect`), que el proyecto nunca importa por su cuenta.
 
 **Así quedó `go.mod` completo:**
 
@@ -235,7 +235,7 @@ Con la conexión resuelta, definimos qué es un `User` para el resto de la aplic
 ```go
 type User struct {
 	Id       int64  `json:"id"`
-	Usename  string `json:"username"`
+	Username string `json:"username"`
 	Password string `json:"password"`
 	Email    string `json:"email"`
 }
@@ -244,8 +244,6 @@ type Users []User
 ```
 
 📘 **Concepto de Go/GORM:** GORM infiere el nombre de la tabla (`users`, en plural y en snake/lower case) y de las columnas a partir del nombre del struct y sus campos, y asume que un campo `Id` de tipo entero es la clave primaria — no hace falta ninguna anotación extra para que esto funcione (son las "convenciones" de GORM). Los tags `json:"..."` son independientes de eso: solo controlan cómo se llama cada campo al serializar/deserializar JSON en los handlers.
-
-⚠️ **Nota de la bitácora:** el campo se llama `Usename` (falta la primera "r" de "Username"). El tag `json:"username"` sí está bien escrito, así que **la API pública no se ve afectada** — quien consuma el JSON nunca ve el typo. Pero cualquier código Go dentro del propio proyecto que necesite referirse a este campo (`user.Usename`) tiene que arrastrar el typo. Lo dejamos como está: corregirlo es un cambio de una sola palabra pero queda fuera del alcance de esta bitácora (no se usa en ningún otro lado del código actual).
 
 Y agregamos la función de migración, para poder crear la tabla a partir del struct sin escribir `CREATE TABLE` a mano:
 
@@ -264,7 +262,7 @@ import "gorm/db"
 
 type User struct {
 	Id       int64  `json:"id"`
-	Usename  string `json:"username"`
+	Username string `json:"username"`
 	Password string `json:"password"`
 	Email    string `json:"email"`
 }
@@ -282,7 +280,7 @@ Antes de escribir el primer handler de verdad, resolvemos algo que todos van a n
 
 ```go
 func sendData(rw http.ResponseWriter, data interface{}, status int) {
-	rw.Header().Set("Content-Type", "aplication/json")
+	rw.Header().Set("Content-Type", "application/json")
 	rw.WriteHeader(status)
 
 	output, _ := json.Marshal(&data)
@@ -290,16 +288,16 @@ func sendData(rw http.ResponseWriter, data interface{}, status int) {
 }
 ```
 
-⚠️ **Nota de la bitácora:** hay dos errores de tipeo reales acá. El header dice `"aplication/json"` (falta la "p" de "application") en vez de `"application/json"`, y `json.Marshal` devuelve un error que descartamos con `_` sin loguearlo. El header mal escrito no rompe nada funcionalmente (la mayoría de los clientes HTTP no validan el `Content-Type` de la respuesta con esa estrictez), pero es incorrecto y vale la pena corregirlo.
+⚠️ **Nota de la bitácora:** `json.Marshal` devuelve un error que descartamos con `_` sin loguearlo (ver [§11](#11-roadmap--pendientes)).
 
 ```go
 func sendError(rw http.ResponseWriter, status int) {
 	rw.WriteHeader(status)
-	fmt.Fprintln(rw, "Resouece Not Found")
+	fmt.Fprintln(rw, "Resource Not Found")
 }
 ```
 
-⚠️ **Nota de la bitácora:** otro typo, "Resouece" en vez de "Resource". Además, `sendError` siempre manda el mismo texto ("Resource Not Found") sin importar el código de estado real que se le pase — hoy solo se usa con `404` y `422` desde `handlers.go`, así que un `422` (`Unprocessable Entity`, body inválido) también devuelve el texto "Resource Not Found", lo cual es engañoso.
+⚠️ **Nota de la bitácora:** `sendError` siempre manda el mismo texto ("Resource Not Found") sin importar el código de estado real que se le pase — hoy solo se usa con `404` y `422` desde `handlers.go`, así que un `422` (`Unprocessable Entity`, body inválido) también devuelve el texto "Resource Not Found", lo cual es engañoso (ver [§11](#11-roadmap--pendientes)).
 
 **Así quedó `handlers/response.go` completo:**
 
@@ -313,7 +311,7 @@ import (
 )
 
 func sendData(rw http.ResponseWriter, data interface{}, status int) {
-	rw.Header().Set("Content-Type", "aplication/json")
+	rw.Header().Set("Content-Type", "application/json")
 	rw.WriteHeader(status)
 
 	output, _ := json.Marshal(&data)
@@ -322,7 +320,7 @@ func sendData(rw http.ResponseWriter, data interface{}, status int) {
 
 func sendError(rw http.ResponseWriter, status int) {
 	rw.WriteHeader(status)
-	fmt.Fprintln(rw, "Resouece Not Found")
+	fmt.Fprintln(rw, "Resource Not Found")
 }
 ```
 
@@ -666,7 +664,6 @@ No hay hot-reload configurado (no encontramos ningún `.air.toml` ni configuraci
 **Faltantes:**
 
 - ⚠️ Hay un binario compilado (`tmp/runner-build`, un ejecutable ELF) **commiteado al repositorio** (`git ls-files` lo confirma). No hay `.gitignore` en este directorio que excluya `tmp/`. Convendría agregar un `.gitignore` con `tmp/` y quitar el binario del control de versiones.
-- Los tres typos reales que encontramos en el código (`"aplication/json"`, `"Resouece Not Found"`, campo `Usename`) — ver [§5.3](#53-modelsusersgo-el-modelo-user) y [§5.4](#54-handlersresponsego-cómo-respondemos).
 - Errores descartados silenciosamente con `_` en dos puntos: `strconv.Atoi` en `getUserById` y `json.Marshal` en `sendData`.
 - No hay logging de errores del lado del servidor — cuando algo falla, la única señal es el código de estado HTTP devuelto al cliente.
 
@@ -698,7 +695,7 @@ No existe ningún archivo `*_test.go` en este proyecto — lo confirmamos recorr
 
 En la práctica, esto significa que:
 
-- No hay forma automática de detectar una regresión (por ejemplo, si alguien "arregla" el typo de `Usename` sin darse cuenta de que rompe algo que dependa del nombre exacto del campo).
+- No hay forma automática de detectar una regresión: cualquier cambio futuro sobre estos archivos depende enteramente de una verificación manual (`go build`, `go vet` y un smoke test con `curl`), porque ningún test automatizado lo va a confirmar por nosotros.
 - La única verificación que existe hoy es manual: levantar el servidor y pegarle con `curl`/Postman a cada endpoint.
 - El acoplamiento directo a `db.Database` como variable global (ver [§7](#7-patrones-aplicados-y-pendientes)) hace que escribir un test unitario de los handlers hoy requiera sí o sí una base MySQL real corriendo — no hay ningún punto de inyección para reemplazarla por un mock o una base en memoria.
 
@@ -707,7 +704,6 @@ Como primer paso razonable de testing (fuera del alcance de esta bitácora, va a
 ## 11. Roadmap / pendientes
 
 - [ ] Agregar `.gitignore` (al menos `tmp/`) y sacar `tmp/runner-build` del control de versiones.
-- [ ] Corregir los tres typos reales: `"aplication/json"`, `"Resouece Not Found"`, campo `Usename`.
 - [ ] Cambiar `CreateUser` de `Save` a `Create` para que un `POST` nunca pueda pisar un registro existente.
 - [ ] Cambiar `UpdateUser` para hacer merge sobre el registro existente en vez de reemplazo completo (evitar que un `PUT` parcial vacíe campos no enviados).
 - [ ] Mover el DSN de MySQL a variables de entorno.
